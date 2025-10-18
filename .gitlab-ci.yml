@@ -30,6 +30,6 @@ deploy_to_k8s:
   script:
     - 'echo "Deploying image $IMAGE_TAG to Kubernetes..."'
     - 'sed -i "s|image: <PLACEHOLDER>|image: $IMAGE_TAG|g" Deployment.yaml'
-    - 'kubectl apply -f Deployment.yaml'
-    - 'kubectl apply -f Service.yaml'
+    - 'kubectl apply -f Deployment.yaml -n default'
+    - 'kubectl apply -f Service.yaml -n default'
     - 'echo "Deployment successful!"'    
