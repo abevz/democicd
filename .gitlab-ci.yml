@@ -19,3 +19,4 @@ build_image:
     - docker build -t $IMAGE_TAG .
     - echo "Pushing Docker image to registry: $IMAGE_TAG"
     - docker push $IMAGE_TAG
+
