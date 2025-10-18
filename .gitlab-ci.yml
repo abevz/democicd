@@ -2,14 +2,9 @@ stages:
   - build
 
 variables:
-  # Используем встроенную переменную GitLab CI для тегирования образа
-  # $CI_REGISTRY_IMAGE - это URL к registry проекта (e.g., registry.gitlab.com/user/project)
-  # $CI_COMMIT_SHORT_SHA - короткий хеш коммита (e.g., a1b2c3d4)
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-  
-  # Переменные для корректной работы Docker-in-Docker (DinD)
   DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: "" # Отключаем TLS для DinD
+  DOCKER_TLS_CERTDIR: ""
 
 build_image:
   stage: build
@@ -18,10 +13,9 @@ build_image:
     - docker:20.10-dind
   before_script:
     # $CI_REGISTRY_USER и $CI_REGISTRY_PASSWORD - это встроенные переменные
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY    
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - echo "Building Docker image with tag: $IMAGE_TAG"
     - docker build -t $IMAGE_TAG .
     - echo "Pushing Docker image to registry: $IMAGE_TAG"
     - docker push $IMAGE_TAG
-
