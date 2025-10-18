@@ -19,4 +19,6 @@ spec:
       - image: <PLACEHOLDER> 
         name: democicd
         resources: {}
+      imagePullSecrets: 
+      - name: gitlab-registry-creds          
 status: {}
