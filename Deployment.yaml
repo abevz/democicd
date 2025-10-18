@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: democicd
+  name: democicd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: democicd
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: democicd
+    spec:
+      containers:
+      - image: <PLACEHOLDER> 
+        name: democicd
+        resources: {}
+status: {}

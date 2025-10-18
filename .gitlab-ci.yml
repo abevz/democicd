@@ -19,3 +19,16 @@ build_image:
     - 'echo "Pushing Docker image to registry: $IMAGE_TAG"'
     - 'docker push $IMAGE_TAG'
 
+deploy_to_k8s:
+  stage: deploy
+  tags:
+    - kubernetes  # 3. Используем K8s-раннер (тег, который ты задал при установке)
+  image:
+    name: bitnami/kubectl:latest  # 4. Берем образ, где есть kubectl
+    entrypoint: [""]
+  script:
+    - 'echo "Deploying image $IMAGE_TAG to Kubernetes..."'
+    - 'sed -i "s|image: <PLACEHOLDER>|image: $IMAGE_TAG|g" Deployment.yaml'
+    - 'kubectl apply -f Deployment.yaml'
+    - 'kubectl apply -f Service.yaml'
+    - 'echo "Deployment successful!"'    
