@@ -5,5 +5,5 @@ RUN go build -o helloworld
 
 FROM alpine
 WORKDIR /app
-COPY --from=builder /app/myapp .
+COPY --from=builder /app/helloworld .
 CMD ["./helloworld"]
