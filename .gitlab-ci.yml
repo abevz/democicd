@@ -8,6 +8,8 @@ variables:
 
 build_image:
   stage: build
+  tags:
+    - docker
   image: docker:20.10
   services:
     - docker:20.10-dind
