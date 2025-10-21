@@ -27,6 +27,10 @@ deploy_to_k8s:
   image:
     name: bitnami/kubectl:latest  # 4. Берем образ, где есть kubectl
     entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"  # 1. Запускать, только если ветка = main
+      when: on_success                # 2. Запускать, когда предыдущие стадии (build) успешны
+    - when: never    
   script:
     - 'echo "Deploying image $IMAGE_TAG to Kubernetes..."'
     - 'sed -i "s|image: <PLACEHOLDER>|image: $IMAGE_TAG|g" Deployment.yaml'
