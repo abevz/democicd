@@ -94,3 +94,6 @@ If you have run out of energy or time for your project, put a note at the top of
 
 ## Merg sample 
 Add for me
+
+## Test merge
+Step as other person
