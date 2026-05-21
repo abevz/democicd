@@ -1,39 +1,135 @@
 stages:
   - build
+  - scan
+  - sign
   - deploy
 
 variables:
-  IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
+  HARBOR_REGISTRY: harbor.bevz.net
+  IMAGE: harbor.bevz.net/demo/democicd:$CI_COMMIT_SHORT_SHA
+  VAULT_ADDR: https://vault.bevz.net
+  GITOPS_REPO_ID: "3"
+  GITOPS_DEPLOY_FILE: "k8s-lab-01%2Fdemocicd%2Fdeployment.yaml"
 
-build_image:
+# All jobs use this id_token for Vault JWT auth
+.vault_token: &vault_token
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.bevz.net
+
+build:
   stage: build
-  tags:
-    - docker
-  image: docker:20.10
-  before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-  script:
-    - 'echo "Building Docker image with tag: $IMAGE_TAG"'
-    - 'docker build -t $IMAGE_TAG .'
-    - 'echo "Pushing Docker image to registry: $IMAGE_TAG"'
-    - 'docker push $IMAGE_TAG'
-
-deploy_to_k8s:
-  stage: deploy
-  tags:
-    - kubernetes  # 3. Используем K8s-раннер (тег, который ты задал при установке)
   image:
-    name: bitnami/kubectl:latest  # 4. Берем образ, где есть kubectl
+    name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"  # 1. Запускать, только если ветка = main
-      when: on_success                # 2. Запускать, когда предыдущие стадии (build) успешны
-    - when: never    
+  <<: *vault_token
   script:
-    - 'echo "Deploying image $IMAGE_TAG to Kubernetes..."'
-    - 'sed -i "s|image: <PLACEHOLDER>|image: $IMAGE_TAG|g" Deployment.yaml'
-    - 'kubectl apply -f Deployment.yaml -n default'
-    - 'kubectl apply -f Service.yaml -n default'
-    - 'echo "Deployment successful!"'    
+    - |
+      # Authenticate to Vault via JWT
+      VAULT_TOKEN=$(wget -qO- \
+        --header "Content-Type: application/json" \
+        --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
+        $VAULT_ADDR/v1/auth/jwt/login | \
+        sed 's/.*"client_token":"\([^"]*\)".*/\1/')
+      # Get Harbor credentials
+      SECRET=$(wget -qO- --header "X-Vault-Token: $VAULT_TOKEN" \
+        $VAULT_ADDR/v1/secret/data/ci/harbor)
+      HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
+      HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
+      # Create kaniko docker config
+      mkdir -p /kaniko/.docker
+      AUTH=$(echo -n "$HARBOR_USER:$HARBOR_PASS" | base64 | tr -d '\n')
+      echo "{\"auths\":{\"$HARBOR_REGISTRY\":{\"auth\":\"$AUTH\"}}}" \
+        > /kaniko/.docker/config.json
+    - /kaniko/executor
+        --context "$CI_PROJECT_DIR"
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
+        --destination "$IMAGE"
+  tags: [kubernetes]
+  only: [main]
+
+scan:
+  stage: scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  <<: *vault_token
+  script:
+    - |
+      VAULT_TOKEN=$(wget -qO- \
+        --header "Content-Type: application/json" \
+        --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
+        $VAULT_ADDR/v1/auth/jwt/login | \
+        sed 's/.*"client_token":"\([^"]*\)".*/\1/')
+      SECRET=$(wget -qO- --header "X-Vault-Token: $VAULT_TOKEN" \
+        $VAULT_ADDR/v1/secret/data/ci/harbor)
+      HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
+      HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
+    - trivy image
+        --exit-code 1
+        --severity CRITICAL
+        --ignore-unfixed
+        --username "$HARBOR_USER"
+        --password "$HARBOR_PASS"
+        "$IMAGE"
+  tags: [kubernetes]
+  only: [main]
+
+sign:
+  stage: sign
+  image: alpine:3.19
+  <<: *vault_token
+  script:
+    - apk add --no-cache curl wget
+    # Install vault CLI
+    - wget -qO /tmp/vault.zip
+        https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
+    - unzip -q /tmp/vault.zip -d /usr/local/bin/
+    # Install cosign
+    - wget -qO /usr/local/bin/cosign
+        https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64
+    - chmod +x /usr/local/bin/cosign
+    # Vault JWT auth
+    - VAULT_TOKEN=$(vault write -field=token auth/jwt/login
+        role=ci-cosign jwt="$VAULT_ID_TOKEN")
+    # Get cosign private key
+    - vault kv get -field=private_key secret/ci/cosign > /tmp/cosign.key
+    # Sign image
+    - cosign sign --key /tmp/cosign.key --yes "$IMAGE"
+    - rm -f /tmp/cosign.key
+  tags: [kubernetes]
+  only: [main]
+
+deploy:
+  stage: deploy
+  image: alpine:3.19
+  <<: *vault_token
+  script:
+    - apk add --no-cache curl
+    # Vault JWT auth → get GitLab token
+    - VAULT_TOKEN=$(curl -sf -X POST
+        -H "Content-Type: application/json"
+        -d "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}"
+        $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
+    - GITOPS_TOKEN=$(curl -sf
+        -H "X-Vault-Token: $VAULT_TOKEN"
+        $VAULT_ADDR/v1/secret/data/ci/gitops | sed 's/.*"token":"\([^"]*\)".*/\1/')
+    # Get current file SHA (required by GitLab API to update file)
+    - FILE_JSON=$(curl -sf
+        -H "PRIVATE-TOKEN: $GITOPS_TOKEN"
+        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
+    - FILE_SHA=$(echo "$FILE_JSON" | sed 's/.*"blob_id":"\([^"]*\)".*/\1/')
+    - CONTENT=$(echo "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/')
+    # Update image tag
+    - NEW_CONTENT=$(echo "$CONTENT" | base64 -d |
+        sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" |
+        base64 | tr -d '\n')
+    # Push update to gitops repo
+    - |
+      curl -sf -X PUT \
+        -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
+        -H "Content-Type: application/json" \
+        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE" \
+        -d "{\"branch\":\"main\",\"content\":\"$NEW_CONTENT\",\"encoding\":\"base64\",\"commit_message\":\"chore: update democicd image to $CI_COMMIT_SHORT_SHA\"}"
+  tags: [kubernetes]
+  only: [main]
