@@ -22,39 +22,28 @@ build:
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
-  <<: *vault_token
   script:
-    - |
-      VAULT_TOKEN=$(wget -qO- --no-check-certificate --header "Content-Type: application/json" \
-        --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
-        $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      SECRET=$(wget -qO- --no-check-certificate --header "X-Vault-Token: $VAULT_TOKEN" \
-        $VAULT_ADDR/v1/secret/data/ci/harbor)
-      HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
-      HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
-      mkdir -p /kaniko/.docker
-      AUTH=$(echo -n "$HARBOR_USER:$HARBOR_PASS" | base64 | tr -d '\n')
-      echo "{\"auths\":{\"$HARBOR_REGISTRY\":{\"auth\":\"$AUTH\"}}}" > /kaniko/.docker/config.json
+    # Harbor credentials pre-mounted at /kaniko/.docker/config.json via K8s secret
     - /kaniko/executor --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
 scan:
   stage: scan
-  image:
-    name: aquasec/trivy:latest
-    entrypoint: [""]
+  image: alpine:3.19
   <<: *vault_token
   script:
+    - apk add --no-cache curl
     - |
-      VAULT_TOKEN=$(wget -qO- --no-check-certificate --header "Content-Type: application/json" \
-        --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
+      export VAULT_TOKEN=$(curl -sfk -X POST -H 'Content-Type: application/json' \
+        -d "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
         $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      SECRET=$(wget -qO- --no-check-certificate --header "X-Vault-Token: $VAULT_TOKEN" \
-        $VAULT_ADDR/v1/secret/data/ci/harbor)
-      export HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
-      export HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
-    - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed --username "$HARBOR_USER" --password "$HARBOR_PASS" "$IMAGE"
+      SECRET=$(curl -sfk -H "X-Vault-Token: $VAULT_TOKEN" $VAULT_ADDR/v1/secret/data/ci/harbor)
+      export TRIVY_USERNAME=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
+      export TRIVY_PASSWORD=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
+    - wget -qO /usr/local/bin/trivy https://github.com/aquasecurity/trivy/releases/download/v0.51.0/trivy_0.51.0_Linux-64bit.tar.gz || true
+    - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.51.0
+    - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
