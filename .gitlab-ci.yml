@@ -81,20 +81,18 @@ deploy:
   image: alpine:3.19
   <<: *vault_token
   script:
-    - apk add --no-cache curl
+    - apk add --no-cache curl unzip
+    - wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip && unzip -q /tmp/vault.zip -d /usr/local/bin/
     - |
-      VAULT_TOKEN=$(curl -sfk -X POST -H 'Content-Type: application/json' \
-        -d "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
-        $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      GITOPS_TOKEN=$(curl -sfk -H "X-Vault-Token: $VAULT_TOKEN" \
-        $VAULT_ADDR/v1/secret/data/ci/gitops | sed 's/.*"token":"\([^"]*\)".*/\1/')
-      FILE_JSON=$(curl -sf -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
+      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
+      GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
+      FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
       CONTENT=$(echo "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/')
       NEW_CONTENT=$(echo "$CONTENT" | base64 -d | \
         sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" | \
         base64 | tr -d '\n')
-      curl -sf -X PUT \
+      curl -sfk -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE" \
