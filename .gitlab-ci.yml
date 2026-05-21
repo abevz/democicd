@@ -82,19 +82,31 @@ deploy:
   <<: *vault_token
   script:
     - |
-      apk add --no-cache curl unzip
+      apk add --no-cache curl unzip python3
       wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
       unzip -q /tmp/vault.zip -d /usr/local/bin/
       export VAULT_SKIP_VERIFY=true
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
-      echo "Vault login status: $?"
       GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
-      FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
-        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
-      CONTENT=$(echo "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/')
-      NEW_CONTENT=$(echo "$CONTENT" | base64 -d | \
-        sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" | \
-        base64 | tr -d '\n')
+      curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
+        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main" \
+        -o /tmp/gitops_file.json
+      NEW_CONTENT=$(IMAGE="$IMAGE" python3 /dev/stdin << 'PYEOF'
+import json, base64, os
+with open('/tmp/gitops_file.json') as f:
+    d = json.load(f)
+image = os.environ['IMAGE']
+content = base64.b64decode(d['content']).decode()
+lines = []
+for line in content.splitlines():
+    indent = len(line) - len(line.lstrip())
+    if line.lstrip().startswith('image: harbor.bevz.net/demo/democicd:'):
+        lines.append(' ' * indent + 'image: ' + image)
+    else:
+        lines.append(line)
+print(base64.b64encode('\n'.join(lines).encode()).decode())
+PYEOF
+      )
       curl -sfk -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
