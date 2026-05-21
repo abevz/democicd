@@ -81,12 +81,13 @@ deploy:
   image: alpine:3.19
   <<: *vault_token
   script:
-    - apk add --no-cache curl unzip
-    - wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip && unzip -q /tmp/vault.zip -d /usr/local/bin/
-    - export VAULT_SKIP_VERIFY=true
-    - vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN" > /tmp/vtoken || (echo "VAULT LOGIN FAILED: $?"; vault write auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN"; exit 1)
-    - export VAULT_TOKEN=$(cat /tmp/vtoken)
     - |
+      apk add --no-cache curl unzip
+      wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
+      unzip -q /tmp/vault.zip -d /usr/local/bin/
+      export VAULT_SKIP_VERIFY=true
+      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
+      echo "Vault login status: $?"
       GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
       FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
