@@ -8,6 +8,7 @@ variables:
   HARBOR_REGISTRY: harbor.bevz.net
   IMAGE: harbor.bevz.net/demo/democicd:$CI_COMMIT_SHORT_SHA
   VAULT_ADDR: https://vault.bevz.net
+  VAULT_SKIP_VERIFY: "true"
   GITOPS_REPO_ID: "3"
   GITOPS_DEPLOY_FILE: k8s-lab-01%2Fdemocicd%2Fdeployment.yaml
 
@@ -24,10 +25,10 @@ build:
   <<: *vault_token
   script:
     - |
-      VAULT_TOKEN=$(wget -qO- --header "Content-Type: application/json" \
+      VAULT_TOKEN=$(wget -qO- --no-check-certificate --header "Content-Type: application/json" \
         --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
         $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      SECRET=$(wget -qO- --header "X-Vault-Token: $VAULT_TOKEN" \
+      SECRET=$(wget -qO- --no-check-certificate --header "X-Vault-Token: $VAULT_TOKEN" \
         $VAULT_ADDR/v1/secret/data/ci/harbor)
       HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
       HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
@@ -46,10 +47,10 @@ scan:
   <<: *vault_token
   script:
     - |
-      VAULT_TOKEN=$(wget -qO- --header "Content-Type: application/json" \
+      VAULT_TOKEN=$(wget -qO- --no-check-certificate --header "Content-Type: application/json" \
         --post-data "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
         $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      SECRET=$(wget -qO- --header "X-Vault-Token: $VAULT_TOKEN" \
+      SECRET=$(wget -qO- --no-check-certificate --header "X-Vault-Token: $VAULT_TOKEN" \
         $VAULT_ADDR/v1/secret/data/ci/harbor)
       export HARBOR_USER=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
       export HARBOR_PASS=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
@@ -80,10 +81,10 @@ deploy:
   script:
     - apk add --no-cache curl
     - |
-      VAULT_TOKEN=$(curl -sf -X POST -H 'Content-Type: application/json' \
+      VAULT_TOKEN=$(curl -sfk -X POST -H 'Content-Type: application/json' \
         -d "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
         $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
-      GITOPS_TOKEN=$(curl -sf -H "X-Vault-Token: $VAULT_TOKEN" \
+      GITOPS_TOKEN=$(curl -sfk -H "X-Vault-Token: $VAULT_TOKEN" \
         $VAULT_ADDR/v1/secret/data/ci/gitops | sed 's/.*"token":"\([^"]*\)".*/\1/')
       FILE_JSON=$(curl -sf -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
