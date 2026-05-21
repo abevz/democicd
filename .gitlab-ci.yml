@@ -67,8 +67,12 @@ sign:
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
       vault kv get -field=private_key secret/ci/cosign > /tmp/cosign.key
       export COSIGN_PASSWORD=$(vault kv get -field=password secret/ci/cosign)
+      HARBOR_USER=$(vault kv get -field=username secret/ci/harbor)
+      HARBOR_PASS=$(vault kv get -field=password secret/ci/harbor)
+      mkdir -p /root/.docker
+      echo "{\"auths\":{\"harbor.bevz.net\":{\"auth\":\"$(echo -n "$HARBOR_USER:$HARBOR_PASS" | base64 | tr -d '\n')\"}}}" > /root/.docker/config.json
       cosign sign --key /tmp/cosign.key --yes "$IMAGE"
-      rm -f /tmp/cosign.key
+      rm -f /tmp/cosign.key /root/.docker/config.json
   tags: [kubernetes]
   only: [main]
 
