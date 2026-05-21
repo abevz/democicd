@@ -82,7 +82,7 @@ deploy:
   <<: *vault_token
   script:
     - |
-      apk add --no-cache curl unzip jq
+      apk add --no-cache curl unzip
       wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
       unzip -q /tmp/vault.zip -d /usr/local/bin/
       export VAULT_SKIP_VERIFY=true
@@ -90,7 +90,8 @@ deploy:
       GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
       FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
-      NEW_CONTENT=$(echo "$FILE_JSON" | jq -r '.content' | tr -d '\n' | base64 -d | \
+      NEW_CONTENT=$(printf '%s' "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/' | \
+        tr -d '\n' | base64 -d | \
         sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" | \
         base64 | tr -d '\n')
       curl -sfk -X PUT \
