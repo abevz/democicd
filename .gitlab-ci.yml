@@ -37,7 +37,9 @@ build:
 
 scan:
   stage: scan
-  image: alpine:3.19
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
   <<: *vault_token
   script:
     - apk add --no-cache curl
@@ -48,8 +50,7 @@ scan:
       SECRET=$(curl -sfk -H "X-Vault-Token: $VAULT_TOKEN" $VAULT_ADDR/v1/secret/data/ci/harbor)
       export TRIVY_USERNAME=$(echo "$SECRET" | sed 's/.*"username":"\([^"]*\)".*/\1/')
       export TRIVY_PASSWORD=$(echo "$SECRET" | sed 's/.*"password":"\([^"]*\)".*/\1/')
-    - wget -qO /usr/local/bin/trivy https://github.com/aquasecurity/trivy/releases/download/v0.51.0/trivy_0.51.0_Linux-64bit.tar.gz || true
-    - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.51.0
+      export TRIVY_INSECURE=true
     - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed "$IMAGE"
   tags: [kubernetes]
   only: [main]
