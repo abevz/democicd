@@ -81,23 +81,35 @@ deploy:
   image: alpine:3.19
   <<: *vault_token
   script:
+    - apk add --no-cache curl
     - |
-      apk add --no-cache curl unzip
-      wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
-      unzip -q /tmp/vault.zip -d /usr/local/bin/
-      export VAULT_SKIP_VERIFY=true
-      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
-      GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
+      set -eu
+      if [ -n "${GITOPS_TOKEN_OVERRIDE:-}" ]; then
+        GITOPS_TOKEN="$GITOPS_TOKEN_OVERRIDE"
+      else
+        VAULT_TOKEN=$(curl -sfk -X POST \
+          -H 'Content-Type: application/json' \
+          -d "{\"role\":\"ci-cosign\",\"jwt\":\"$VAULT_ID_TOKEN\"}" \
+          $VAULT_ADDR/v1/auth/jwt/login | sed 's/.*"client_token":"\([^"]*\)".*/\1/')
+        GITOPS_TOKEN=$(curl -sfk -H "X-Vault-Token: $VAULT_TOKEN" \
+          $VAULT_ADDR/v1/secret/data/ci/gitops | sed 's/.*"token":"\([^"]*\)".*/\1/')
+      fi
       FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
+      LAST_COMMIT_ID=$(printf '%s' "$FILE_JSON" | sed 's/.*"last_commit_id":"\([^"]*\)".*/\1/')
       NEW_CONTENT=$(printf '%s' "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/' | \
         tr -d '\n' | base64 -d | \
         sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" | \
         base64 | tr -d '\n')
-      curl -sfk -X PUT \
+      HTTP_STATUS=$(curl -sk -o /tmp/gitops-update-response.json -w "%{http_code}" -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE" \
-        -d "{\"branch\":\"main\",\"content\":\"$NEW_CONTENT\",\"encoding\":\"base64\",\"commit_message\":\"chore: update democicd image to $CI_COMMIT_SHORT_SHA\"}"
+        -d "{\"branch\":\"main\",\"last_commit_id\":\"$LAST_COMMIT_ID\",\"content\":\"$NEW_CONTENT\",\"encoding\":\"base64\",\"commit_message\":\"chore: update democicd image to $CI_COMMIT_SHORT_SHA\"}")
+      if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+        echo "GitOps update failed with HTTP $HTTP_STATUS"
+        cat /tmp/gitops-update-response.json
+        exit 1
+      fi
   tags: [kubernetes]
   only: [main]
