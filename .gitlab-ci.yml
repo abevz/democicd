@@ -20,12 +20,19 @@ variables:
 build:
   stage: build
   image:
-    name: gcr.io/kaniko-project/executor:debug
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
+    pull_policy: always
   variables:
     DOCKER_CONFIG: /dockerconfig
   script:
-    - /kaniko/executor --force --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
+    - /kaniko/executor --force
+        --registry-mirror harbor.bevz.net/dockerhub-proxy
+        --skip-tls-verify
+        --skip-tls-verify-pull
+        --context "$CI_PROJECT_DIR"
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
+        --destination "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
