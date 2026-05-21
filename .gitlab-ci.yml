@@ -82,16 +82,17 @@ deploy:
   <<: *vault_token
   script:
     - |
-      apk add --no-cache curl unzip python3
+      apk add --no-cache curl unzip jq
       wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip
       unzip -q /tmp/vault.zip -d /usr/local/bin/
       export VAULT_SKIP_VERIFY=true
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
       GITOPS_TOKEN=$(vault kv get -field=token secret/ci/gitops)
-      curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
-        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main" \
-        -o /tmp/gitops_file.json
-      NEW_CONTENT=$(IMAGE="$IMAGE" python3 -c "import json,base64,os; d=json.load(open('/tmp/gitops_file.json')); img=os.environ['IMAGE']; c=base64.b64decode(d['content']).decode(); ls=[' '*(len(l)-len(l.lstrip()))+'image: '+img if l.lstrip().startswith('image: harbor.bevz.net/demo/democicd:') else l for l in c.splitlines()]; print(base64.b64encode(chr(10).join(ls).encode()).decode())")
+      FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
+        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
+      NEW_CONTENT=$(echo "$FILE_JSON" | jq -r '.content' | tr -d '\n' | base64 -d | \
+        sed "s|image: harbor.bevz.net/demo/democicd:.*|image: $IMAGE|" | \
+        base64 | tr -d '\n')
       curl -sfk -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
