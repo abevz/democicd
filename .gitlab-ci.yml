@@ -59,8 +59,6 @@ sign:
   stage: sign
   image: alpine:3.19
   <<: *vault_token
-  variables:
-    COSIGN_PASSWORD: ""
   script:
     - apk add --no-cache curl unzip
     - wget -qO /tmp/vault.zip https://releases.hashicorp.com/vault/1.17.0/vault_1.17.0_linux_amd64.zip && unzip -q /tmp/vault.zip -d /usr/local/bin/
@@ -68,6 +66,7 @@ sign:
     - |
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login role=ci-cosign jwt="$VAULT_ID_TOKEN")
       vault kv get -field=private_key secret/ci/cosign > /tmp/cosign.key
+      export COSIGN_PASSWORD=$(vault kv get -field=password secret/ci/cosign)
       cosign sign --key /tmp/cosign.key --yes "$IMAGE"
       rm -f /tmp/cosign.key
   tags: [kubernetes]
