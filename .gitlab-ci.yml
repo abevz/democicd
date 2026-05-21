@@ -24,7 +24,9 @@ build:
     entrypoint: [""]
   script:
     # Harbor credentials pre-mounted at /kaniko/.docker/config.json via K8s secret
-    - /kaniko/executor --force --insecure-skip-tls-verify --verbosity=debug --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
+    - echo "IMAGE=$IMAGE"
+    - cat /kaniko/.docker/config.json || echo "no config.json"
+    - /kaniko/executor --force --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
