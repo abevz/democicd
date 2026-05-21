@@ -91,22 +91,7 @@ deploy:
       curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main" \
         -o /tmp/gitops_file.json
-      NEW_CONTENT=$(IMAGE="$IMAGE" python3 /dev/stdin << 'PYEOF'
-import json, base64, os
-with open('/tmp/gitops_file.json') as f:
-    d = json.load(f)
-image = os.environ['IMAGE']
-content = base64.b64decode(d['content']).decode()
-lines = []
-for line in content.splitlines():
-    indent = len(line) - len(line.lstrip())
-    if line.lstrip().startswith('image: harbor.bevz.net/demo/democicd:'):
-        lines.append(' ' * indent + 'image: ' + image)
-    else:
-        lines.append(line)
-print(base64.b64encode('\n'.join(lines).encode()).decode())
-PYEOF
-      )
+      NEW_CONTENT=$(IMAGE="$IMAGE" python3 -c "import json,base64,os; d=json.load(open('/tmp/gitops_file.json')); img=os.environ['IMAGE']; c=base64.b64decode(d['content']).decode(); ls=[' '*(len(l)-len(l.lstrip()))+'image: '+img if l.lstrip().startswith('image: harbor.bevz.net/demo/democicd:') else l for l in c.splitlines()]; print(base64.b64encode(chr(10).join(ls).encode()).decode())")
       curl -sfk -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
