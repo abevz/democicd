@@ -22,10 +22,16 @@ build:
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
+  variables:
+    DOCKER_CONFIG: /dockerconfig
   script:
-    # K8s secret mount uses symlinks - copy to ensure kaniko reads it directly
-    - cp /kaniko/.docker/config.json /tmp/config.json && mkdir -p /root/.docker && cp /tmp/config.json /root/.docker/config.json
-    - /kaniko/executor --force --docker-cfg /tmp/config.json --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
+    - /kaniko/executor --force
+        --registry-mirror harbor.bevz.net/dockerhub-proxy
+        --skip-tls-verify
+        --skip-tls-verify-pull
+        --context "$CI_PROJECT_DIR"
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
+        --destination "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
