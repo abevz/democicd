@@ -25,13 +25,7 @@ build:
   variables:
     DOCKER_CONFIG: /dockerconfig
   script:
-    - /kaniko/executor --force
-        --registry-mirror harbor.bevz.net/dockerhub-proxy
-        --skip-tls-verify
-        --skip-tls-verify-pull
-        --context "$CI_PROJECT_DIR"
-        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
-        --destination "$IMAGE"
+    - /kaniko/executor --force --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/Dockerfile" --destination "$IMAGE"
   tags: [kubernetes]
   only: [main]
 
