@@ -5,11 +5,11 @@ stages:
   - deploy
 
 variables:
-  HARBOR_REGISTRY: harbor.bevz.net
-  IMAGE_REPO: harbor.bevz.net/demo/democicd
+  HARBOR_REGISTRY: harbor.example.com
+  IMAGE_REPO: harbor.example.com/demo/democicd
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
   IMAGE: $IMAGE_REPO:$IMAGE_TAG
-  VAULT_ADDR: https://vault.bevz.net
+  VAULT_ADDR: https://vault.example.com
   VAULT_SKIP_VERIFY: "true"
   GITOPS_REPO_ID: "3"
   GITOPS_DEPLOY_FILE: k8s-lab-01%2Fdemocicd%2Fdeployment.yaml
@@ -17,7 +17,7 @@ variables:
 .vault_token: &vault_token
   id_tokens:
     VAULT_ID_TOKEN:
-      aud: https://vault.bevz.net
+      aud: https://vault.example.com
 
 build:
   stage: build
@@ -28,7 +28,7 @@ build:
     DOCKER_CONFIG: /dockerconfig
   script:
     - /kaniko/executor --force
-        --registry-mirror harbor.bevz.net/dockerhub-proxy
+        --registry-mirror harbor.example.com/dockerhub-proxy
         --skip-tls-verify
         --skip-tls-verify-pull
         --context "$CI_PROJECT_DIR"
@@ -79,7 +79,7 @@ sign:
       HARBOR_USER=$(vault kv get -field=username secret/ci/harbor)
       HARBOR_PASS=$(vault kv get -field=password secret/ci/harbor)
       mkdir -p /root/.docker
-      echo "{\"auths\":{\"harbor.bevz.net\":{\"auth\":\"$(echo -n "$HARBOR_USER:$HARBOR_PASS" | base64 | tr -d '\n')\"}}}" > /root/.docker/config.json
+      echo "{\"auths\":{\"harbor.example.com\":{\"auth\":\"$(echo -n "$HARBOR_USER:$HARBOR_PASS" | base64 | tr -d '\n')\"}}}" > /root/.docker/config.json
       cosign sign --key /tmp/cosign.key --yes "$IMAGE_REF"
       rm -f /tmp/cosign.key /root/.docker/config.json
   tags: [kubernetes]
@@ -105,16 +105,16 @@ deploy:
           $VAULT_ADDR/v1/secret/data/ci/gitops | sed 's/.*"token":"\([^"]*\)".*/\1/')
       fi
       FILE_JSON=$(curl -sfk -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
-        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
+        "https://gitlab.example.com/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE?ref=main")
       LAST_COMMIT_ID=$(printf '%s' "$FILE_JSON" | sed 's/.*"last_commit_id":"\([^"]*\)".*/\1/')
       NEW_CONTENT=$(printf '%s' "$FILE_JSON" | sed 's/.*"content":"\([^"]*\)".*/\1/' | \
         tr -d '\n' | base64 -d | \
-        sed "s|image: harbor.bevz.net/demo/democicd.*|image: $IMAGE_REF|" | \
+        sed "s|image: harbor.example.com/demo/democicd.*|image: $IMAGE_REF|" | \
         base64 | tr -d '\n')
       HTTP_STATUS=$(curl -sk -o /tmp/gitops-update-response.json -w "%{http_code}" -X PUT \
         -H "PRIVATE-TOKEN: $GITOPS_TOKEN" \
         -H 'Content-Type: application/json' \
-        "https://gitlab.bevz.net/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE" \
+        "https://gitlab.example.com/api/v4/projects/$GITOPS_REPO_ID/repository/files/$GITOPS_DEPLOY_FILE" \
         -d "{\"branch\":\"main\",\"last_commit_id\":\"$LAST_COMMIT_ID\",\"content\":\"$NEW_CONTENT\",\"encoding\":\"base64\",\"commit_message\":\"chore: update democicd image to $CI_COMMIT_SHORT_SHA ($IMAGE_DIGEST)\"}")
       if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
         echo "GitOps update failed with HTTP $HTTP_STATUS"
