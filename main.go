@@ -12,7 +12,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// fmt.Fprintf очень удобен, он записывает форматированную строку
 		// прямо в http.ResponseWriter, который отправляет ее клиенту.
-		fmt.Fprintf(w, "Hello, World!")
+		_, _ = fmt.Fprintf(w, "Hello, World!")
 	})
 
 	// Определяем порт
