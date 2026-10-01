@@ -67,7 +67,7 @@ jobs:
       image_name: democicd
     permissions:
       contents: read
-      packages: write
+      packages: read
 
     #steps:
     #  - uses: actions/checkout@v4
