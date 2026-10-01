@@ -63,11 +63,12 @@ jobs:
     #runs-on: ubuntu-latest
     needs: [lint, build]
     uses: abevz/ci-templates/.github/workflows/build.yml@v1
+    environment: production
     with:
       image_name: democicd
     permissions:
       contents: read
-      packages: read
+      packages: write
 
     #steps:
     #  - uses: actions/checkout@v4
