@@ -69,14 +69,26 @@ jobs:
       contents: read
       packages: write
 
-  deploy:
-    needs: docker
+  aws-oidc:
     runs-on: ubuntu-latest
-    environment: production
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - run: echo "deploy would happen here"
-    #steps:
-    #  - uses: actions/checkout@v4
-    #
-    #  - name: Build image
-    #    run: docker build -t democicd:ci-${{ github.sha }} .
+      - uses: aws-actions/configure-aws-credentials@<SHA> # v4
+        with:
+          role-to-assume: arn:aws:iam::492613460415:role/gha-democicd-oidc-lab
+          aws-region: eu-central-2
+      - run: aws sts get-caller-identity
+
+  #deploy:
+  #  needs: docker
+  #  runs-on: ubuntu-latest
+  #  environment: production
+  #  steps:
+  #    - run: echo "deploy would happen here"
+  #steps:
+  #  - uses: actions/checkout@v4
+  #
+  #  - name: Build image
+  #    run: docker build -t democicd:ci-${{ github.sha }} .
